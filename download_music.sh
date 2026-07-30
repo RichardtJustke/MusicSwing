@@ -17,7 +17,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${1:-$SCRIPT_DIR/playlists.txt}"
 MUSIC_ROOT="${MUSIC_ROOT:-/root/musica}"
-COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
 ARCHIVES_DIR="$SCRIPT_DIR/archives"
 
 mkdir -p "$ARCHIVES_DIR"
@@ -161,10 +160,6 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
   )
 
-  if [[ -f "$COOKIES" ]]; then
-    YT_ARGS+=(--cookies "$COOKIES")
-  fi
-
   # --- Etapa 1: Download ---
   echo "  Etapa 1/2: Baixando audio..."
   if ! yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
@@ -235,10 +230,6 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
       -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
     )
-
-    if [[ -f "$COOKIES" ]]; then
-      YT_ARGS+=(--cookies "$COOKIES")
-    fi
 
     if yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
       if python3 "$SCRIPT_DIR/tag_and_sort.py" \
