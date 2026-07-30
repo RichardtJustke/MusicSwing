@@ -1,0 +1,12 @@
+# Formato: URL|Artista|Album|Genero
+# - Genero pode ser "auto" (tenta descobrir via MusicBrainz) ou um valor fixo tipo "Rock Nacional"
+# - Linhas começando com # são ignoradas
+# - Todas as faixas de uma mesma linha caem juntas num álbum só
+
+https://www.youtube.com/playlist?list=SUA_PLAYLIST_CHARLIE_BROWN_JR|Charlie Brown Jr|Coletânea Charlie Brown Jr|Rock Nacional
+
+# Exemplo com gênero automático:
+https://www.youtube.com/playlist?list=OUTRA_PLAYLIST|Nome do Artista|Nome do Album|auto
+
+# Exemplo com suas "Liked Videos" do YouTube (precisa de cookies.txt logado):
+# https://www.youtube.com/playlist?list=LL|Favoritas|Minhas Favoritas do YouTube|auto
