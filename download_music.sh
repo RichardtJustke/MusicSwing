@@ -1,105 +1,181 @@
 #!/usr/bin/env bash
-#
-# download_music.sh
-#
-# Baixa playlists do YouTube (áudio + thumbnail como capa), força
-# artista/álbum/gênero por playlist e organiza tudo em:
-#     $MUSIC_ROOT/Genero/Artista/Album/NN - Titulo.mp3
-#
-# Rode direto NO SERVIDOR ORACLE (dentro da pasta onde o Swing Music
-# tem o volume /root/musica montado), assim não precisa de scp depois.
-#
-# Uso:
-#   ./download_music.sh [arquivo_de_playlists.txt]
-#
-# Formato do arquivo de playlists (uma por linha, separado por "|"):
-#   URL|Artista|Album|Genero
-#
-# Genero pode ser "auto" (tenta descobrir via MusicBrainz) ou um valor fixo.
-# Linhas começando com # são ignoradas.
-
 set -euo pipefail
 
+# ============================================================
+# download_music.sh
+# Baixa playlists do YouTube, organiza em Genero/Artista/Album
+# e deixa pronto pro Swing Music.
+#
+# Uso: ./download_music.sh [arquivo_playlists.txt]
+#
+# Formato do arquivo:
+#   URL|Artista|Album|Genero
+#   URL (autodetecta se nao tiver |)
+# ============================================================
+
+# ---- Configuracoes ----
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${1:-$SCRIPT_DIR/playlists.txt}"
 MUSIC_ROOT="${MUSIC_ROOT:-/root/musica}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
 ARCHIVES_DIR="$SCRIPT_DIR/archives"
+
 mkdir -p "$ARCHIVES_DIR"
+STAGING="$(mktemp -d)"
+ANALISE=$(mktemp)
+trap 'rm -rf "$STAGING" "$ANALISE"' EXIT
+
+# ---- Dependencias ----
+command -v yt-dlp >/dev/null || { echo "yt-dlp nao instalado. Rode: pip install yt-dlp"; exit 1; }
+command -v python3 >/dev/null || { echo "python3 nao encontrado."; exit 1; }
+python3 -c "import mutagen" 2>/dev/null || { echo "Falta mutagen. Rode: pip install mutagen requests"; exit 1; }
 
 if [[ ! -f "$CONFIG" ]]; then
-  echo "Arquivo de playlists não encontrado: $CONFIG"
-  echo "Copia o playlists.example.txt pra playlists.txt e edita com suas playlists."
+  echo "Arquivo de playlists nao encontrado: $CONFIG"
+  echo "Copie playlists.example.txt para playlists.txt e edite."
   exit 1
 fi
 
-command -v yt-dlp >/dev/null || { echo "yt-dlp não instalado. Roda: pip install yt-dlp --break-system-packages"; exit 1; }
-command -v python3 >/dev/null || { echo "python3 não encontrado."; exit 1; }
-python3 -c "import mutagen" 2>/dev/null || { echo "Falta mutagen. Roda: pip install mutagen requests --break-system-packages"; exit 1; }
+# ---- Utilitarios ----
+separador() {
+  printf '%*s\n' 80 '' | tr ' ' '='
+}
 
-STAGING="$(mktemp -d)"
-trap 'rm -rf "$STAGING"' EXIT
+detectar() {
+  local url="$1"
+  local info
+  info=$(yt-dlp --dump-json --playlist-items 1 --socket-timeout 15 "$url" 2>/dev/null || true)
 
-TOTAL=0
-FAILED=0
+  if [[ -z "$info" ]]; then
+    echo ""
+    return 1
+  fi
+
+  local artista album tamanho
+  artista=$(echo "$info" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('channel') or d.get('uploader') or '')
+" 2>/dev/null || echo "")
+
+  album=$(echo "$info" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('playlist_title') or '')
+" 2>/dev/null || echo "")
+
+  tamanho=$(echo "$info" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('playlist_count', 0))
+" 2>/dev/null || echo "0")
+
+  echo "$artista|$album|$tamanho"
+}
+
+# ============================================================
+# FASE 1: ANALISAR PLAYLISTS
+# ============================================================
+separador
+echo "  FASE 1: ANALISANDO PLAYLISTS"
+separador
+
+TOTAL_PLAYLISTS=0
 declare -A SEEN_URLS
-FAILED_URLS=()
-FAILED_ARTISTS=()
-FAILED_ALBUMS=()
-FAILED_GENRES=()
 
 while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
   URL="$(echo "$URL" | xargs)"
   [[ -z "$URL" ]] && continue
   [[ "$URL" =~ ^# ]] && continue
   [[ ! "$URL" =~ ^https?:// ]] && continue
-
-  if [[ -n "${SEEN_URLS[$URL]:-}" ]]; then
-    echo "==> Pulando URL duplicada: $URL"
-    continue
-  fi
+  [[ -n "${SEEN_URLS[$URL]:-}" ]] && continue
   SEEN_URLS[$URL]=1
 
+  TOTAL_PLAYLISTS=$((TOTAL_PLAYLISTS + 1))
+
+  printf "  Playlist %2d: %-50s" "$TOTAL_PLAYLISTS" "${URL:0:50}"
+
   if [[ -z "${ARTIST// }" ]]; then
-    echo "==> Detectando playlist automaticamente..."
-    DETECT_ERR=$(mktemp)
-    INFO=$(yt-dlp --flat-playlist --dump-json "$URL" 2>"$DETECT_ERR" | head -1 || true)
-    if [ -n "$INFO" ]; then
-      ARTIST=$(echo "$INFO" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d.get('channel') or d.get('uploader') or '')
-" 2>/dev/null)
-      ALBUM=$(echo "$INFO" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d.get('playlist_title') or '')
-" 2>/dev/null)
-    fi
-    if [ -z "$ARTIST" ]; then
-      echo "    [erro] Nao foi possivel detectar dados da playlist."
-      echo "    Motivo: $(tr -d '\n' < "$DETECT_ERR" | head -c 300)"
-      echo "    Tente usar o formato: URL|Artista|Album|Genero no playlists.txt"
-      rm -f "$DETECT_ERR"
+    resultado=$(detectar "$URL")
+    if [[ -z "$resultado" ]]; then
+      echo "  [FALHA] Nao foi possivel detectar"
+      echo "        Tente formato: URL|Artista|Album|Genero"
       continue
     fi
-    rm -f "$DETECT_ERR"
+    IFS='|' read -r ARTIST ALBUM TAMANHO <<< "$resultado"
     GENRE="auto"
-    echo "    Artista: $ARTIST | Album: $ALBUM"
+    echo "  OK  $TAMANHO faixas"
+  else
+    TAMANHO="?"
+    echo "  OK  (usando dados manuais)"
   fi
 
   ARTIST="$(echo "$ARTIST" | xargs)"
   ALBUM="$(echo "$ALBUM" | xargs)"
   GENRE="$(echo "${GENRE:-auto}" | xargs)"
 
-  echo ""
-  echo "==> Baixando playlist: $ARTIST - $ALBUM"
-  echo "    URL: $URL"
+  # Salva no arquivo de analise: TAMANHO|ARTIST|ALBUM|GENRE|URL
+  # Usa "0" como fallback se TAMANHO nao for numero
+  if [[ "$TAMANHO" =~ ^[0-9]+$ ]]; then
+    printf "%010d|%s|%s|%s|%s\n" "$TAMANHO" "$ARTIST" "$ALBUM" "$GENRE" "$URL" >> "$ANALISE"
+  else
+    printf "%010d|%s|%s|%s|%s\n" "0" "$ARTIST" "$ALBUM" "$GENRE" "$URL" >> "$ANALISE"
+  fi
+done < "$CONFIG"
 
+if [[ $TOTAL_PLAYLISTS -eq 0 ]]; then
+  echo "  Nenhuma playlist valida encontrada em $CONFIG"
+  exit 1
+fi
+
+# ---- Ordenar por tamanho (maior primeiro) ----
+SORTED=$(sort -t'|' -k1 -rn "$ANALISE" | head -100)
+
+echo ""
+separador
+echo "  ORDEM DE DOWNLOAD (MAIOR PRIMEIRO)"
+separador
+printf "  %-3s %-40s %-20s %7s\n" "#" "Playlist" "Artista" "Faixas"
+printf "  %-3s %-40s %-20s %7s\n" "---" "----------------------------------------" "--------------------" "-------"
+
+ORDER=0
+while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
+  ORDER=$((ORDER + 1))
+  nome="${ALBUM:0:38}"
+  artista="${ARTIST:0:18}"
+  printf "  %3d %-40s %-20s %7d\n" "$ORDER" "$nome" "$artista" "$((10#$TAMANHO))"
+done <<< "$SORTED"
+
+echo ""
+
+# ============================================================
+# FASE 2: BAIXAR PLAYLISTS
+# ============================================================
+separador
+echo "  FASE 2: BAIXANDO PLAYLISTS"
+separador
+echo ""
+
+TOTAL_OK=0
+TOTAL_FAIL=0
+ORDER=0
+FAILED_URLS=()
+FAILED_ARTISTS=()
+FAILED_ALBUMS=()
+FAILED_GENRES=()
+
+while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
+  ORDER=$((ORDER + 1))
+
+  echo "  [${ORDER}/${TOTAL_PLAYLISTS}] ${ARTIST} - ${ALBUM}"
+  echo "  --------------------------------------------------"
+
+  # Prepara diretorio
   SAFE_NAME="$(echo "${ARTIST}_${ALBUM}" | tr ' /' '__')"
   PLAYLIST_DIR="$STAGING/$SAFE_NAME"
   mkdir -p "$PLAYLIST_DIR"
 
+  # Monta argumentos do yt-dlp
   YT_ARGS=(
     -x --audio-format mp3 --audio-quality 0
     --embed-thumbnail
@@ -113,51 +189,62 @@ print(d.get('playlist_title') or '')
 
   if [[ -f "$COOKIES" ]]; then
     YT_ARGS+=(--cookies "$COOKIES")
-  else
-    echo "    [aviso] cookies.txt não encontrado — só vai funcionar para playlists públicas."
   fi
 
-  if ! yt-dlp "${YT_ARGS[@]}" "$URL"; then
-    echo "    [erro] download falhou. Será readicionado pra nova tentativa."
+  # --- Etapa 1: Download ---
+  echo "  Etapa 1/2: Baixando audio..."
+  if ! yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
+    echo "  [ERRO] Download falhou"
     FAILED_URLS+=("$URL")
     FAILED_ARTISTS+=("$ARTIST")
     FAILED_ALBUMS+=("$ALBUM")
     FAILED_GENRES+=("$GENRE")
+    TOTAL_FAIL=$((TOTAL_FAIL + 1))
     continue
   fi
 
+  # --- Etapa 2: Tags + Organizar ---
+  echo "  Etapa 2/2: Aplicando tags e organizando..."
   if ! python3 "$SCRIPT_DIR/tag_and_sort.py" \
     --input "$PLAYLIST_DIR" \
     --artist "$ARTIST" \
     --album "$ALBUM" \
     --genre "$GENRE" \
-    --output "$MUSIC_ROOT"; then
-    echo "    [erro] organização das tags falhou. Será readicionado pra nova tentativa."
+    --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /'; then
+    echo "  [ERRO] Falha ao organizar arquivos"
     FAILED_URLS+=("$URL")
     FAILED_ARTISTS+=("$ARTIST")
     FAILED_ALBUMS+=("$ALBUM")
     FAILED_GENRES+=("$GENRE")
+    TOTAL_FAIL=$((TOTAL_FAIL + 1))
     continue
   fi
 
-  TOTAL=$((TOTAL + 1))
-done < "$CONFIG"
+  TOTAL_OK=$((TOTAL_OK + 1))
+  echo "  OK: ${ARTIST} - ${ALBUM}"
+  echo ""
 
-echo ""
-echo "==> $TOTAL playlist(s) concluídas na primeira passada."
+done <<< "$SORTED"
 
+# ============================================================
+# FASE 3: RETENTATIVA
+# ============================================================
 if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
   echo ""
-  echo "==> ${#FAILED_URLS[@]} playlist(s) falharam. Iniciando retentativa..."
+  separador
+  echo "  FASE 3: RETENTATIVA (${#FAILED_URLS[@]} playlist(s))"
+  separador
+  echo ""
+
+  RETRY_OK=0
   for i in "${!FAILED_URLS[@]}"; do
     URL="${FAILED_URLS[$i]}"
     ARTIST="${FAILED_ARTISTS[$i]}"
     ALBUM="${FAILED_ALBUMS[$i]}"
     GENRE="${FAILED_GENRES[$i]}"
 
-    echo ""
-    echo "==> Retentativa: $ARTIST - $ALBUM"
-    echo "    URL: $URL"
+    echo "  Retentativa: ${ARTIST} - ${ALBUM}"
+    echo "  --------------------------------------------------"
 
     SAFE_NAME="$(echo "${ARTIST}_${ALBUM}" | tr ' /' '__')"
     PLAYLIST_DIR="$STAGING/$SAFE_NAME"
@@ -178,39 +265,50 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       YT_ARGS+=(--cookies "$COOKIES")
     fi
 
-    if yt-dlp "${YT_ARGS[@]}" "$URL"; then
+    if yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
       if python3 "$SCRIPT_DIR/tag_and_sort.py" \
         --input "$PLAYLIST_DIR" \
         --artist "$ARTIST" \
         --album "$ALBUM" \
         --genre "$GENRE" \
-        --output "$MUSIC_ROOT"; then
-        TOTAL=$((TOTAL + 1))
-        echo "    OK na retentativa: $ARTIST - $ALBUM"
+        --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /'; then
+        TOTAL_OK=$((TOTAL_OK + 1))
+        RETRY_OK=$((RETRY_OK + 1))
+        echo "  OK na retentativa!"
       else
-        FAILED=$((FAILED + 1))
-        echo "    [erro] Falhou novamente: $ARTIST - $ALBUM"
+        TOTAL_FAIL=$((TOTAL_FAIL + 1))
+        echo "  [ERRO] Falhou novamente na organizacao"
       fi
     else
-      FAILED=$((FAILED + 1))
-      echo "    [erro] Falhou novamente: $ARTIST - $ALBUM"
+      TOTAL_FAIL=$((TOTAL_FAIL + 1))
+      echo "  [ERRO] Falhou novamente no download"
     fi
+    echo ""
   done
 fi
 
+# ============================================================
+# SUMARIO FINAL
+# ============================================================
 echo ""
-echo "=============================="
-echo "  Total: $TOTAL playlist(s) baixadas"
-echo "  Falhas: $FAILED"
-echo "  Biblioteca: $MUSIC_ROOT"
-echo "=============================="
+separador
+echo "  SUMARIO FINAL"
+separador
+echo ""
+echo "  Total de playlists processadas: $TOTAL_OK"
+echo "  Falhas:                         $TOTAL_FAIL"
+echo "  Biblioteca em:                  $MUSIC_ROOT"
+echo ""
 
-if command -v docker >/dev/null && docker ps --format '{{.Names}}' | grep -q '^swingmusic$'; then
-  echo "==> Reiniciando o container swingmusic pra reconhecer as novas faixas..."
+# ---- Docker ----
+if command -v docker >/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^swingmusic$'; then
+  echo "  Reiniciando container swingmusic..."
   docker restart swingmusic
+  echo "  Container reiniciado"
 else
-  echo "==> Não achei o container 'swingmusic' rodando. Reinicia manualmente se precisar:"
+  echo "  Container swingmusic nao encontrado. Reinicie manualmente se necessario:"
   echo "    docker compose restart"
 fi
 
-echo "Pronto!"
+echo ""
+echo "  Pronto!"
