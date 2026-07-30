@@ -41,40 +41,12 @@ separador() {
   printf '%*s\n' 80 '' | tr ' ' '='
 }
 
-detectar() {
+extrair_id() {
   local url="$1"
-  local info
-
-  if command -v timeout &>/dev/null; then
-    info=$(timeout 15 yt-dlp --flat-playlist --dump-json "$url" 2>/dev/null | head -1 || true)
-  else
-    info=$(yt-dlp --flat-playlist --dump-json "$url" 2>/dev/null | head -1 || true)
-  fi
-
-  if [[ -z "$info" ]]; then
-    return 1
-  fi
-
-  local artista album tamanho
-  artista=$(echo "$info" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d.get('channel') or d.get('uploader') or '')
-" 2>/dev/null)
-
-  album=$(echo "$info" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d.get('playlist_title') or '')
-" 2>/dev/null)
-
-  tamanho=$(echo "$info" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d.get('playlist_count', 0))
-" 2>/dev/null)
-
-  echo "${artista:-Desconhecido}|${album:-Playlist}|${tamanho:-0}"
+  local id
+  id=$(echo "$url" | sed 's/.*list=//;s/[&].*//' | sed 's/.*v=//;s/[&].*//' | head -c 40)
+  [[ -z "$id" ]] && id="playlist_$(echo "$url" | md5sum | head -c 8)"
+  echo "$id"
 }
 
 # ============================================================
@@ -100,17 +72,11 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
   printf "  Playlist %2d: %-50s" "$TOTAL_PLAYLISTS" "${URL:0:50}"
 
   if [[ -z "${ARTIST// }" ]]; then
-    resultado=$(detectar "$URL")
-    if [[ -z "$resultado" ]]; then
-      FALLBACK=$(echo "$URL" | sed 's/.*list=//;s/[&].*//' | head -c 30)
-      echo "  [aviso] usando fallback: $FALLBACK"
-      ARTIST="Desconhecido"
-      ALBUM="$FALLBACK"
-      TAMANHO=0
-    else
-      IFS='|' read -r ARTIST ALBUM TAMANHO <<< "$resultado"
-      echo "  OK  $TAMANHO faixas"
-    fi
+    FALLBACK=$(extrair_id "$URL")
+    echo "  ID: $FALLBACK"
+    ARTIST="Desconhecido"
+    ALBUM="$FALLBACK"
+    TAMANHO=0
     GENRE="auto"
   else
     TAMANHO="?"
