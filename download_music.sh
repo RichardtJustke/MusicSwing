@@ -43,18 +43,17 @@ separador() {
 
 detectar() {
   local url="$1"
-  local info err
-  err=$(mktemp)
-  info=$(timeout 30 yt-dlp --dump-json --playlist-items 1 --socket-timeout 10 "$url" 2>"$err" || true)
+  local info
+
+  if command -v timeout &>/dev/null; then
+    info=$(timeout 15 yt-dlp --flat-playlist --dump-json "$url" 2>/dev/null | head -1 || true)
+  else
+    info=$(yt-dlp --flat-playlist --dump-json "$url" 2>/dev/null | head -1 || true)
+  fi
 
   if [[ -z "$info" ]]; then
-    local motivo
-    motivo=$(tr -d '\n' < "$err" | head -c 200)
-    echo "[FALHA] $motivo"
-    rm -f "$err"
     return 1
   fi
-  rm -f "$err"
 
   local artista album tamanho
   artista=$(echo "$info" | python3 -c "
@@ -102,14 +101,17 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
 
   if [[ -z "${ARTIST// }" ]]; then
     resultado=$(detectar "$URL")
-    if [[ "$resultado" =~ ^\[FALHA\] ]]; then
-      echo "  $resultado"
-      echo "        Tente formato: URL|Artista|Album|Genero"
-      continue
+    if [[ -z "$resultado" ]]; then
+      FALLBACK=$(echo "$URL" | sed 's/.*list=//;s/[&].*//' | head -c 30)
+      echo "  [aviso] usando fallback: $FALLBACK"
+      ARTIST="Desconhecido"
+      ALBUM="$FALLBACK"
+      TAMANHO=0
+    else
+      IFS='|' read -r ARTIST ALBUM TAMANHO <<< "$resultado"
+      echo "  OK  $TAMANHO faixas"
     fi
-    IFS='|' read -r ARTIST ALBUM TAMANHO <<< "$resultado"
     GENRE="auto"
-    echo "  OK  $TAMANHO faixas"
   else
     TAMANHO="?"
     echo "  OK  (usando dados manuais)"
