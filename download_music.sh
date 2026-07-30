@@ -41,7 +41,12 @@ STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 
 TOTAL=0
+FAILED=0
 declare -A SEEN_URLS
+FAILED_URLS=()
+FAILED_ARTISTS=()
+FAILED_ALBUMS=()
+FAILED_GENRES=()
 
 while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
   URL="$(echo "$URL" | xargs)"
@@ -111,20 +116,92 @@ print(d.get('playlist_title') or '')
     echo "    [aviso] cookies.txt não encontrado — só vai funcionar para playlists públicas."
   fi
 
-  yt-dlp "${YT_ARGS[@]}" "$URL" || echo "    [aviso] alguns vídeos podem ter falhado, seguindo em frente."
+  if ! yt-dlp "${YT_ARGS[@]}" "$URL"; then
+    echo "    [erro] download falhou. Será readicionado pra nova tentativa."
+    FAILED_URLS+=("$URL")
+    FAILED_ARTISTS+=("$ARTIST")
+    FAILED_ALBUMS+=("$ALBUM")
+    FAILED_GENRES+=("$GENRE")
+    continue
+  fi
 
-  python3 "$SCRIPT_DIR/tag_and_sort.py" \
+  if ! python3 "$SCRIPT_DIR/tag_and_sort.py" \
     --input "$PLAYLIST_DIR" \
     --artist "$ARTIST" \
     --album "$ALBUM" \
     --genre "$GENRE" \
-    --output "$MUSIC_ROOT"
+    --output "$MUSIC_ROOT"; then
+    echo "    [erro] organização das tags falhou. Será readicionado pra nova tentativa."
+    FAILED_URLS+=("$URL")
+    FAILED_ARTISTS+=("$ARTIST")
+    FAILED_ALBUMS+=("$ALBUM")
+    FAILED_GENRES+=("$GENRE")
+    continue
+  fi
 
   TOTAL=$((TOTAL + 1))
 done < "$CONFIG"
 
 echo ""
-echo "==> $TOTAL playlist(s) processada(s). Biblioteca em: $MUSIC_ROOT"
+echo "==> $TOTAL playlist(s) concluídas na primeira passada."
+
+if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
+  echo ""
+  echo "==> ${#FAILED_URLS[@]} playlist(s) falharam. Iniciando retentativa..."
+  for i in "${!FAILED_URLS[@]}"; do
+    URL="${FAILED_URLS[$i]}"
+    ARTIST="${FAILED_ARTISTS[$i]}"
+    ALBUM="${FAILED_ALBUMS[$i]}"
+    GENRE="${FAILED_GENRES[$i]}"
+
+    echo ""
+    echo "==> Retentativa: $ARTIST - $ALBUM"
+    echo "    URL: $URL"
+
+    SAFE_NAME="$(echo "${ARTIST}_${ALBUM}" | tr ' /' '__')"
+    PLAYLIST_DIR="$STAGING/$SAFE_NAME"
+    mkdir -p "$PLAYLIST_DIR"
+
+    YT_ARGS=(
+      -x --audio-format mp3 --audio-quality 0
+      --embed-thumbnail
+      --no-embed-metadata
+      --ignore-errors
+      --no-overwrites
+      --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
+      -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
+    )
+
+    if [[ -f "$COOKIES" ]]; then
+      YT_ARGS+=(--cookies "$COOKIES")
+    fi
+
+    if yt-dlp "${YT_ARGS[@]}" "$URL"; then
+      if python3 "$SCRIPT_DIR/tag_and_sort.py" \
+        --input "$PLAYLIST_DIR" \
+        --artist "$ARTIST" \
+        --album "$ALBUM" \
+        --genre "$GENRE" \
+        --output "$MUSIC_ROOT"; then
+        TOTAL=$((TOTAL + 1))
+        echo "    OK na retentativa: $ARTIST - $ALBUM"
+      else
+        FAILED=$((FAILED + 1))
+        echo "    [erro] Falhou novamente: $ARTIST - $ALBUM"
+      fi
+    else
+      FAILED=$((FAILED + 1))
+      echo "    [erro] Falhou novamente: $ARTIST - $ALBUM"
+    fi
+  done
+fi
+
+echo ""
+echo "=============================="
+echo "  Total: $TOTAL playlist(s) baixadas"
+echo "  Falhas: $FAILED"
+echo "  Biblioteca: $MUSIC_ROOT"
+echo "=============================="
 
 if command -v docker >/dev/null && docker ps --format '{{.Names}}' | grep -q '^swingmusic$'; then
   echo "==> Reiniciando o container swingmusic pra reconhecer as novas faixas..."
