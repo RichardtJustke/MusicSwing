@@ -17,6 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${1:-$SCRIPT_DIR/playlists.txt}"
 MUSIC_ROOT="${MUSIC_ROOT:-/root/musica}"
+COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
 ARCHIVES_DIR="$SCRIPT_DIR/archives"
 
 mkdir -p "$ARCHIVES_DIR"
@@ -28,6 +29,18 @@ trap 'rm -rf "$STAGING" "$ANALISE"' EXIT
 command -v yt-dlp >/dev/null || { echo "yt-dlp nao instalado. Rode: pip install yt-dlp"; exit 1; }
 command -v python3 >/dev/null || { echo "python3 nao encontrado."; exit 1; }
 python3 -c "import mutagen" 2>/dev/null || { echo "Falta mutagen. Rode: pip install mutagen requests"; exit 1; }
+
+# Se cookies existirem, instala deno pra resolver JS (necessario com cookies)
+if [[ -f "$COOKIES" ]] && ! command -v deno &>/dev/null; then
+  echo "  Cookies encontrados mas deno nao instalado. Instalando..."
+  curl -fsSL https://deno.land/install.sh | sh -s -- -y 2>&1 | tail -3
+  export DENO_INSTALL="$HOME/.deno"
+  export PATH="$DENO_INSTALL/bin:$PATH"
+fi
+# Garante que deno esteja no PATH se ja foi instalado antes
+if [[ -f "$COOKIES" ]] && [[ -d "$HOME/.deno/bin" ]]; then
+  export PATH="$HOME/.deno/bin:$PATH"
+fi
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "Arquivo de playlists nao encontrado: $CONFIG"
@@ -155,10 +168,15 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --ignore-errors
     --no-overwrites
     --sleep-interval 2
-    --extractor-args "youtube:player_client=android"
     --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
     -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
   )
+
+  if [[ -f "$COOKIES" ]]; then
+    YT_ARGS+=(--cookies "$COOKIES")
+  else
+    YT_ARGS+=(--extractor-args "youtube:player_client=android")
+  fi
 
   # --- Etapa 1: Download ---
   echo "  Etapa 1/2: Baixando audio..."
@@ -226,10 +244,15 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --ignore-errors
       --no-overwrites
       --sleep-interval 2
-      --extractor-args "youtube:player_client=android"
       --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
       -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
     )
+
+    if [[ -f "$COOKIES" ]]; then
+      YT_ARGS+=(--cookies "$COOKIES")
+    else
+      YT_ARGS+=(--extractor-args "youtube:player_client=android")
+    fi
 
     if yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
       if python3 "$SCRIPT_DIR/tag_and_sort.py" \
