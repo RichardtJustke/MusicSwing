@@ -43,34 +43,39 @@ separador() {
 
 detectar() {
   local url="$1"
-  local info
-  info=$(yt-dlp --dump-json --playlist-items 1 --socket-timeout 15 "$url" 2>/dev/null || true)
+  local info err
+  err=$(mktemp)
+  info=$(timeout 30 yt-dlp --dump-json --playlist-items 1 --socket-timeout 10 "$url" 2>"$err" || true)
 
   if [[ -z "$info" ]]; then
-    echo ""
+    local motivo
+    motivo=$(tr -d '\n' < "$err" | head -c 200)
+    echo "[FALHA] $motivo"
+    rm -f "$err"
     return 1
   fi
+  rm -f "$err"
 
   local artista album tamanho
   artista=$(echo "$info" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 print(d.get('channel') or d.get('uploader') or '')
-" 2>/dev/null || echo "")
+" 2>/dev/null)
 
   album=$(echo "$info" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 print(d.get('playlist_title') or '')
-" 2>/dev/null || echo "")
+" 2>/dev/null)
 
   tamanho=$(echo "$info" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 print(d.get('playlist_count', 0))
-" 2>/dev/null || echo "0")
+" 2>/dev/null)
 
-  echo "$artista|$album|$tamanho"
+  echo "${artista:-Desconhecido}|${album:-Playlist}|${tamanho:-0}"
 }
 
 # ============================================================
@@ -97,8 +102,8 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
 
   if [[ -z "${ARTIST// }" ]]; then
     resultado=$(detectar "$URL")
-    if [[ -z "$resultado" ]]; then
-      echo "  [FALHA] Nao foi possivel detectar"
+    if [[ "$resultado" =~ ^\[FALHA\] ]]; then
+      echo "  $resultado"
       echo "        Tente formato: URL|Artista|Album|Genero"
       continue
     fi
