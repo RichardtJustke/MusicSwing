@@ -106,6 +106,7 @@ print(d.get('playlist_title') or '')
     --no-embed-metadata
     --ignore-errors
     --no-overwrites
+    --sleep-interval 2
     --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
     -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
   )
@@ -168,6 +169,7 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --no-embed-metadata
       --ignore-errors
       --no-overwrites
+      --sleep-interval 2
       --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
       -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
     )
