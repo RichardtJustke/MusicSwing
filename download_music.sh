@@ -57,22 +57,28 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
 
   if [[ -z "${ARTIST// }" ]]; then
     echo "==> Detectando playlist automaticamente..."
-    INFO=$(yt-dlp --flat-playlist --dump-json "$URL" 2>/dev/null | head -1)
+    DETECT_ERR=$(mktemp)
+    INFO=$(yt-dlp --flat-playlist --dump-json "$URL" 2>"$DETECT_ERR" | head -1 || true)
     if [ -n "$INFO" ]; then
       ARTIST=$(echo "$INFO" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print(d.get('channel') or d.get('uploader') or 'Desconhecido')
-")
+print(d.get('channel') or d.get('uploader') or '')
+" 2>/dev/null)
       ALBUM=$(echo "$INFO" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print(d.get('playlist_title') or d.get('title') or 'Playlist')
-")
-    else
-      ARTIST="Desconhecido"
-      ALBUM="Playlist"
+print(d.get('playlist_title') or '')
+" 2>/dev/null)
     fi
+    if [ -z "$ARTIST" ]; then
+      echo "    [erro] Nao foi possivel detectar dados da playlist."
+      echo "    Motivo: $(tr -d '\n' < "$DETECT_ERR" | head -c 300)"
+      echo "    Tente usar o formato: URL|Artista|Album|Genero no playlists.txt"
+      rm -f "$DETECT_ERR"
+      continue
+    fi
+    rm -f "$DETECT_ERR"
     GENRE="auto"
     echo "    Artista: $ARTIST | Album: $ALBUM"
   fi
