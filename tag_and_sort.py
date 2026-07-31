@@ -169,19 +169,25 @@ def main():
         # Preserva o álbum original extraído pelo yt-dlp do YouTube caso args.album seja um ID (ex: OLAK... ou PL...)
         existing_album = audio.get("album", [""])[0] if audio.get("album") else ""
         is_album_id = bool(re.match(r"^(PL|OLAK|UC)[A-Za-z0-9_-]+$", args.album))
-        final_album = existing_album.strip() if (is_album_id and existing_album and existing_album.strip()) else args.album
+        raw_album = existing_album.strip() if (is_album_id and existing_album and existing_album.strip()) else args.album
+        
+        # Se o álbum for genérico ou ID de playlist, usa o próprio Título da música como álbum
+        # para que o SwingMusic exiba a capa ÚNICA e individual de cada música!
+        if not raw_album or re.match(r"^(PL|OLAK|UC)[A-Za-z0-9_-]+$", raw_album) or raw_album.lower() in ("álbum", "album", "singles & coletâneas", "desconhecido"):
+            final_album = title
+        else:
+            final_album = raw_album
 
         audio["artist"] = final_artist
         audio["albumartist"] = final_artist
-        if final_album:
-            audio["album"] = final_album
+        audio["album"] = final_album
         audio["title"] = title
         audio["genre"] = genre
         audio["tracknumber"] = track_num
         audio.save()
 
         artist_dir = sanitize(final_artist)
-        album_dir = sanitize(final_album or "Álbum")
+        album_dir = sanitize(final_album)
         dest_dir = os.path.join(args.output, genre_dir, artist_dir, album_dir)
         os.makedirs(dest_dir, exist_ok=True)
 

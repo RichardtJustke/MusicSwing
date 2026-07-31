@@ -50,8 +50,8 @@ def fix_file(filepath, base_dir):
     if not artist or artist.strip().lower() in ("desconhecido", "unknown"):
         artist = "Vários Artistas"
 
-    if not album or re.match(r"^(PL|OLAK|UC)[A-Za-z0-9_-]+$", album):
-        album = "Singles & Coletâneas"
+    if not album or re.match(r"^(PL|OLAK|UC)[A-Za-z0-9_-]+$", album) or album.lower() in ("singles & coletâneas", "desconhecido", "álbum", "album"):
+        album = title
 
     audio["artist"] = artist
     audio["albumartist"] = artist
