@@ -85,11 +85,21 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
 
   if [[ -z "${ARTIST// }" ]]; then
     FALLBACK=$(extrair_id "$URL")
-    echo "  ID: $FALLBACK"
     ARTIST="Desconhecido"
     ALBUM="$FALLBACK"
-    TAMANHO=0
     GENRE="auto"
+
+    # Detecta tamanho da playlist via yt-dlp
+    echo -n " ID: $FALLBACK"
+    TAMANHO=$(yt-dlp --flat-playlist --dump-json --ignore-errors \
+      ${COOKIES:+--cookies "$COOKIES"} \
+      "$URL" 2>/dev/null | wc -l | tr -d ' ')
+    if [[ -z "$TAMANHO" || "$TAMANHO" -eq 0 ]]; then
+      TAMANHO="?"
+      echo ""
+    else
+      echo " ($TAMANHO faixas)"
+    fi
   else
     TAMANHO="?"
     echo "  OK  (usando dados manuais)"
@@ -120,16 +130,42 @@ echo ""
 separador
 echo "  ORDEM DE DOWNLOAD (MAIOR PRIMEIRO)"
 separador
-printf "  %-3s %-40s %-20s %7s\n" "#" "Playlist" "Artista" "Faixas"
-printf "  %-3s %-40s %-20s %7s\n" "---" "----------------------------------------" "--------------------" "-------"
+printf "  %-3s %-38s %-18s %7s %10s\n" "#" "Playlist" "Artista" "Faixas" "Estimado"
+printf "  %-3s %-38s %-18s %7s %10s\n" "---" "--------------------------------------" "------------------" "-------" "----------"
 
+TOTAL_EST_SEG=0
 ORDER=0
 while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   ORDER=$((ORDER + 1))
-  nome="${ALBUM:0:38}"
-  artista="${ARTIST:0:18}"
-  printf "  %3d %-40s %-20s %7d\n" "$ORDER" "$nome" "$artista" "$((10#$TAMANHO))"
+  nome="${ALBUM:0:36}"
+  artista="${ARTIST:0:16}"
+
+  if [[ "$((10#$TAMANHO))" -gt 0 ]]; then
+    seg=$(( (10#$TAMANHO) * 5 ))
+    TOTAL_EST_SEG=$((TOTAL_EST_SEG + seg))
+    if [[ "$seg" -ge 3600 ]]; then
+      est=$(printf "%dh%02dm" $((seg / 3600)) $(( (seg % 3600) / 60 )))
+    elif [[ "$seg" -ge 60 ]]; then
+      est=$(printf "%dm%02ds" $((seg / 60)) $((seg % 60)))
+    else
+      est="${seg}s"
+    fi
+  else
+    est="?"
+  fi
+
+  printf "  %3d %-38s %-18s %7d %10s\n" "$ORDER" "$nome" "$artista" "$((10#$TAMANHO))" "$est"
 done <<< "$SORTED"
+
+if [[ "$TOTAL_EST_SEG" -gt 0 ]]; then
+  if [[ "$TOTAL_EST_SEG" -ge 3600 ]]; then
+    total_est=$(printf "%dh%02dm" $((TOTAL_EST_SEG / 3600)) $(( (TOTAL_EST_SEG % 3600) / 60 )))
+  else
+    total_est=$(printf "%dm%02ds" $((TOTAL_EST_SEG / 60)) $((TOTAL_EST_SEG % 60)))
+  fi
+  echo ""
+  echo "  Tempo estimado total: $total_est (~5s/faixa + overhead)"
+fi
 
 echo ""
 
