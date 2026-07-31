@@ -43,12 +43,13 @@ CONFIG="${CONFIG:-$SCRIPT_DIR/playlists.txt}"
 
 if [[ -w "/root/musica" || ( ! -e "/root/musica" && -w "/root" ) ]]; then
   DEFAULT_MUSIC_ROOT="/root/musica"
+  SERVER_SYNC=""
 else
   DEFAULT_MUSIC_ROOT="$SCRIPT_DIR/musica"
+  SERVER_SYNC="${SERVER_SYNC:-root@100.107.36.118:/root/musica}"
 fi
 MUSIC_ROOT="${MUSIC_ROOT:-$DEFAULT_MUSIC_ROOT}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
-SERVER_SYNC="${SERVER_SYNC:-}"
 
 if [[ -n "$SERVER_SYNC" ]]; then
   echo "  [INFO] Sincronização ao vivo para o servidor ativa: $SERVER_SYNC"
