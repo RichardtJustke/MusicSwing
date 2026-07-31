@@ -50,10 +50,14 @@ def sanitize(name: str) -> str:
 def lookup_genre_musicbrainz(artist: str) -> str:
     """Tenta descobrir o gênero mais comum de um artista via MusicBrainz.
     Cai pra 'Outros' se não achar nada ou se o requests não estiver disponível."""
+    fallback = "Outros"
+    if not artist or artist.strip().lower() in ("desconhecido", "unknown", "vários artistas", "various artists", "va", "auto"):
+        GENRE_CACHE[artist] = fallback
+        return fallback
+
     if artist in GENRE_CACHE:
         return GENRE_CACHE[artist]
 
-    fallback = "Outros"
     if requests is None:
         return fallback
 
@@ -109,12 +113,17 @@ def extract_track_number(filename: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="pasta com os mp3 baixados dessa playlist")
+    ap.add_argument("--input", help="pasta ou arquivo mp3 baixado")
+    ap.add_argument("--file", help="arquivo mp3 individual")
     ap.add_argument("--artist", required=True)
     ap.add_argument("--album", required=True)
     ap.add_argument("--genre", default="auto", help="'auto' pra tentar descobrir, ou um valor fixo")
     ap.add_argument("--output", required=True, help="raiz da biblioteca de música final")
     args = ap.parse_args()
+
+    target_input = args.file or args.input
+    if not target_input:
+        sys.exit("É necessário especificar --file ou --input")
 
     genre = args.genre.strip()
     if not genre or genre.lower() == "auto":
@@ -128,13 +137,22 @@ def main():
     dest_dir = os.path.join(args.output, genre_dir, artist_dir, album_dir)
     os.makedirs(dest_dir, exist_ok=True)
 
-    files = sorted(f for f in os.listdir(args.input) if f.lower().endswith(".mp3"))
-    if not files:
-        print(f"    [aviso] nenhum mp3 encontrado em {args.input}")
+    if os.path.isfile(target_input):
+        files_to_process = [target_input]
+    elif os.path.isdir(target_input):
+        files_to_process = sorted(
+            os.path.join(target_input, f) for f in os.listdir(target_input) if f.lower().endswith(".mp3")
+        )
+    else:
+        print(f"    [aviso] caminho não encontrado: {target_input}")
         return
 
-    for fname in files:
-        src = os.path.join(args.input, fname)
+    if not files_to_process:
+        print(f"    [aviso] nenhum mp3 encontrado em {target_input}")
+        return
+
+    for src in files_to_process:
+        fname = os.path.basename(src)
         track_num = extract_track_number(fname)
         title = strip_track_prefix(fname)
 
@@ -156,11 +174,17 @@ def main():
         dest_path = os.path.join(dest_dir, dest_name)
         if os.path.exists(dest_path):
             print(f"    [pulado] já existe: {dest_name}")
+            if os.path.exists(src) and src != dest_path:
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
             continue
         shutil.move(src, dest_path)
-        print(f"    OK: {dest_name}")
+        print(f"    [MOVIDO PARA BIBLIOTECA] {dest_name}")
 
-    print(f"    -> {len(files)} faixa(s) organizada(s) em {dest_dir}")
+    if os.path.isdir(target_input):
+        print(f"    -> {len(files_to_process)} faixa(s) organizada(s) em {dest_dir}")
 
 
 if __name__ == "__main__":
