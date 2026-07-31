@@ -30,18 +30,6 @@ command -v yt-dlp >/dev/null || { echo "yt-dlp nao instalado. Rode: pip install 
 command -v python3 >/dev/null || { echo "python3 nao encontrado."; exit 1; }
 python3 -c "import mutagen" 2>/dev/null || { echo "Falta mutagen. Rode: pip install mutagen requests"; exit 1; }
 
-# Se cookies existirem, instala deno pra resolver JS (necessario com cookies)
-if [[ -f "$COOKIES" ]] && ! command -v deno &>/dev/null; then
-  echo "  Cookies encontrados mas deno nao instalado. Instalando..."
-  curl -fsSL https://deno.land/install.sh | sh -s -- -y 2>&1 | tail -3
-  export DENO_INSTALL="$HOME/.deno"
-  export PATH="$DENO_INSTALL/bin:$PATH"
-fi
-# Garante que deno esteja no PATH se ja foi instalado antes
-if [[ -f "$COOKIES" ]] && [[ -d "$HOME/.deno/bin" ]]; then
-  export PATH="$HOME/.deno/bin:$PATH"
-fi
-
 if [[ ! -f "$CONFIG" ]]; then
   echo "Arquivo de playlists nao encontrado: $CONFIG"
   echo "Copie playlists.example.txt para playlists.txt e edite."
@@ -168,14 +156,26 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --ignore-errors
     --no-overwrites
     --sleep-interval 2
+    --extractor-args "youtube:player_client=android"
     --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
     -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
   )
 
   if [[ -f "$COOKIES" ]]; then
-    YT_ARGS+=(--cookies "$COOKIES")
-  else
-    YT_ARGS+=(--extractor-args "youtube:player_client=android")
+    COOKIE_VAL=$(python3 -c "
+import sys
+with open('$COOKIES') as f:
+    pairs = []
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split('\t')
+        if len(parts) >= 7 and 'youtube' in parts[0]:
+            pairs.append(f'{parts[5]}={parts[6]}')
+    sys.stdout.write('; '.join(pairs))
+")
+    YT_ARGS+=(--add-header "Cookie: $COOKIE_VAL")
   fi
 
   # --- Etapa 1: Download ---
@@ -244,14 +244,26 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --ignore-errors
       --no-overwrites
       --sleep-interval 2
+      --extractor-args "youtube:player_client=android"
       --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
       -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
     )
 
     if [[ -f "$COOKIES" ]]; then
-      YT_ARGS+=(--cookies "$COOKIES")
-    else
-      YT_ARGS+=(--extractor-args "youtube:player_client=android")
+      COOKIE_VAL=$(python3 -c "
+import sys
+with open('$COOKIES') as f:
+    pairs = []
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split('\t')
+        if len(parts) >= 7 and 'youtube' in parts[0]:
+            pairs.append(f'{parts[5]}={parts[6]}')
+    sys.stdout.write('; '.join(pairs))
+")
+      YT_ARGS+=(--add-header "Cookie: $COOKIE_VAL")
     fi
 
     if yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
