@@ -187,8 +187,9 @@ def main():
         if server_sync:
             try:
                 rel_path = os.path.relpath(dest_path, args.output)
-                # Garante transferencia via rsync para o servidor com bypass de hostkey prompt
-                sync_cmd = f"rsync -avzR -e 'ssh -o StrictHostKeyChecking=no' './{rel_path}' '{server_sync}'"
+                key_path = os.path.expanduser("~/Downloads/oracle-24gb.key")
+                ssh_key_opt = f"-i '{key_path}' " if os.path.exists(key_path) else ""
+                sync_cmd = f"rsync -avzR -e 'ssh {ssh_key_opt}-o StrictHostKeyChecking=no' './{rel_path}' '{server_sync}'"
                 res = os.system(f"cd '{args.output}' && {sync_cmd}")
                 if res == 0:
                     print(f"    [ENVIADO PARA SERVIDOR] -> {server_sync}/{rel_path}")
