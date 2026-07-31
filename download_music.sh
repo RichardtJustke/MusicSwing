@@ -19,11 +19,16 @@ CONFIG="${1:-$SCRIPT_DIR/playlists.txt}"
 MUSIC_ROOT="${MUSIC_ROOT:-/root/musica}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
 ARCHIVES_DIR="$SCRIPT_DIR/archives"
+LOG_FILE="$SCRIPT_DIR/download.log"
 
 mkdir -p "$ARCHIVES_DIR"
 STAGING="$(mktemp -d)"
 ANALISE=$(mktemp)
 trap 'rm -rf "$STAGING" "$ANALISE"' EXIT
+
+# Log de tudo que rodar (terminal + arquivo)
+exec > >(tee "$LOG_FILE")
+exec 2>&1
 
 # ---- Dependencias ----
 command -v yt-dlp >/dev/null || { echo "yt-dlp nao instalado. Rode: pip install yt-dlp"; exit 1; }
