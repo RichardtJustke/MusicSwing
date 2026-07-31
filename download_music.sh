@@ -208,7 +208,9 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --no-embed-metadata
     --ignore-errors
     --no-overwrites
-    --sleep-interval 2
+    --sleep-interval 3
+    --max-sleep-interval 8
+    --sleep-requests 8
     --remote-components ejs:github
     --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
     -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
@@ -240,7 +242,18 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --artist "$ARTIST" \
     --album "$ALBUM" \
     --genre "$GENRE" \
-    --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /' || true
+    --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /'
+  TAGS_EXIT="${PIPESTATUS[0]:-1}"
+
+  if [[ "$TAGS_EXIT" -ne 0 ]]; then
+    echo "  [ERRO] tag_and_sort.py falhou (exit $TAGS_EXIT)"
+    FAILED_URLS+=("$URL")
+    FAILED_ARTISTS+=("$ARTIST")
+    FAILED_ALBUMS+=("$ALBUM")
+    FAILED_GENRES+=("$GENRE")
+    TOTAL_FAIL=$((TOTAL_FAIL + 1))
+    continue
+  fi
 
   TOTAL_OK=$((TOTAL_OK + 1))
   echo "  OK: ${ARTIST} - ${ALBUM}"
@@ -278,7 +291,9 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --no-embed-metadata
       --ignore-errors
       --no-overwrites
-      --sleep-interval 2
+      --sleep-interval 3
+    --max-sleep-interval 8
+    --sleep-requests 8
       --remote-components ejs:github
       --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
       -o "$PLAYLIST_DIR/%(playlist_index)03d - %(title)s.%(ext)s"
@@ -297,10 +312,16 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
         --artist "$ARTIST" \
         --album "$ALBUM" \
         --genre "$GENRE" \
-        --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /' || true
-      TOTAL_OK=$((TOTAL_OK + 1))
-      RETRY_OK=$((RETRY_OK + 1))
-      echo "  OK na retentativa!"
+        --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /'
+      TAGS_EXIT="${PIPESTATUS[0]:-1}"
+      if [[ "$TAGS_EXIT" -eq 0 ]]; then
+        TOTAL_OK=$((TOTAL_OK + 1))
+        RETRY_OK=$((RETRY_OK + 1))
+        echo "  OK na retentativa!"
+      else
+        TOTAL_FAIL=$((TOTAL_FAIL + 1))
+        echo "  [ERRO] tag_and_sort.py falhou na retentativa (exit $TAGS_EXIT)"
+      fi
     else
       TOTAL_FAIL=$((TOTAL_FAIL + 1))
       echo "  [ERRO] Nenhum MP3 baixado na retentativa"
