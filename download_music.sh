@@ -31,10 +31,19 @@ else
 fi
 MUSIC_ROOT="${MUSIC_ROOT:-$DEFAULT_MUSIC_ROOT}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
-if [[ -f "$COOKIES" ]]; then
+USE_OAUTH2="${USE_OAUTH2:-false}"
+
+if [[ "${1:-}" == "--oauth2" ]]; then
+  USE_OAUTH2=true
+  shift
+fi
+
+if [[ -f "$COOKIES" && "$USE_OAUTH2" != "true" ]]; then
   if yt-dlp --no-check-certificates --cookies "$COOKIES" "https://www.youtube.com/watch?v=B1kJ9RnHZ9o" --simulate 2>&1 | grep -q -i "cookies are no longer valid"; then
     echo "  [AVISO] $COOKIES contem cookies expirados do YouTube!"
-    echo "  [AVISO] Ignorando cookies expirados para evitar bloqueios de bot pelo YouTube."
+    echo "  [AVISO] Para resolver o bloqueio de bot do YouTube:"
+    echo "          1. Atualize o arquivo cookies.txt exportando do seu navegador"
+    echo "          2. Ou rode o script com OAuth2: ./download_music.sh --oauth2"
     COOKIES=""
   fi
 fi
@@ -53,9 +62,20 @@ exec > >(tee "$LOG_FILE")
 exec 2>&1
 
 # ---- Dependencias ----
-command -v yt-dlp >/dev/null || { echo "yt-dlp nao instalado. Rode: pip install yt-dlp"; exit 1; }
 command -v python3 >/dev/null || { echo "python3 nao encontrado."; exit 1; }
-python3 -c "import mutagen" 2>/dev/null || { echo "Falta mutagen. Rode: pip install mutagen requests"; exit 1; }
+
+if ! command -v yt-dlp >/dev/null || ! python3 -c "import mutagen" 2>/dev/null; then
+  echo "  [INFO] Dependências (yt-dlp / mutagen) não encontradas no sistema."
+  echo "  [INFO] Criando ambiente virtual em $SCRIPT_DIR/venv e instalando pacotes..."
+  python3 -m venv "$SCRIPT_DIR/venv" || { echo "[ERRO] Não foi possível criar o venv."; exit 1; }
+  "$SCRIPT_DIR/venv/bin/pip" install --upgrade pip yt-dlp mutagen requests yt-dlp-youtube-oauth2 2>&1 | tail -n 5
+  export PATH="$SCRIPT_DIR/venv/bin:$PATH"
+fi
+
+if [[ -f "$SCRIPT_DIR/venv/bin/pip" ]]; then
+  export PATH="$SCRIPT_DIR/venv/bin:$PATH"
+  "$SCRIPT_DIR/venv/bin/pip" install -q yt-dlp-youtube-oauth2 2>/dev/null || true
+fi
 
 # JS runtime para resolver JS challenges do YouTube (Node ou Deno)
 if ! command -v deno &>/dev/null && ! command -v node &>/dev/null; then
@@ -270,7 +290,9 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     YT_ARGS+=(--js-runtimes deno)
   fi
 
-  if [[ -n "${COOKIES:-}" && -f "$COOKIES" ]]; then
+  if [[ "$USE_OAUTH2" == "true" ]]; then
+    YT_ARGS+=(--username oauth2)
+  elif [[ -n "${COOKIES:-}" && -f "$COOKIES" ]]; then
     YT_ARGS+=(--cookies "$COOKIES")
   fi
 
@@ -383,6 +405,10 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       YT_ARGS+=(--js-runtimes node)
     elif command -v deno &>/dev/null; then
       YT_ARGS+=(--js-runtimes deno)
+    fi
+
+    if [[ "$USE_OAUTH2" == "true" ]]; then
+      YT_ARGS+=(--username oauth2)
     fi
 
     # Tenta retentativa sem cookies caso cookies antigos tenham causado falha por auth/bot block
