@@ -23,7 +23,24 @@ for p in "$SCRIPT_DIR/venv/bin" "$HOME/venv-yt/bin" "$HOME/.local/bin"; do
   fi
 done
 
-CONFIG="${1:-$SCRIPT_DIR/playlists.txt}"
+USE_OAUTH2="${USE_OAUTH2:-false}"
+CONFIG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --oauth2)
+      USE_OAUTH2=true
+      shift
+      ;;
+    *)
+      CONFIG="$1"
+      shift
+      ;;
+  esac
+done
+
+CONFIG="${CONFIG:-$SCRIPT_DIR/playlists.txt}"
+
 if [[ -w "/root/musica" || ( ! -e "/root/musica" && -w "/root" ) ]]; then
   DEFAULT_MUSIC_ROOT="/root/musica"
 else
@@ -31,12 +48,6 @@ else
 fi
 MUSIC_ROOT="${MUSIC_ROOT:-$DEFAULT_MUSIC_ROOT}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
-USE_OAUTH2="${USE_OAUTH2:-false}"
-
-if [[ "${1:-}" == "--oauth2" ]]; then
-  USE_OAUTH2=true
-  shift
-fi
 
 if [[ -f "$COOKIES" && "$USE_OAUTH2" != "true" ]]; then
   if yt-dlp --no-check-certificates --cookies "$COOKIES" "https://www.youtube.com/watch?v=B1kJ9RnHZ9o" --simulate 2>&1 | grep -q -i "cookies are no longer valid"; then
