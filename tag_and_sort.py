@@ -187,10 +187,13 @@ def main():
         if server_sync:
             try:
                 rel_path = os.path.relpath(dest_path, args.output)
-                # Garante transferencia via rsync para o servidor
-                sync_cmd = f"rsync -azR '{rel_path}' '{server_sync}'"
-                os.system(f"cd '{args.output}' && {sync_cmd} 2>/dev/null")
-                print(f"    [ENVIADO PARA SERVIDOR] -> {server_sync}/{rel_path}")
+                # Garante transferencia via rsync para o servidor com bypass de hostkey prompt
+                sync_cmd = f"rsync -avzR -e 'ssh -o StrictHostKeyChecking=no' './{rel_path}' '{server_sync}'"
+                res = os.system(f"cd '{args.output}' && {sync_cmd}")
+                if res == 0:
+                    print(f"    [ENVIADO PARA SERVIDOR] -> {server_sync}/{rel_path}")
+                else:
+                    print(f"    [AVISO] rsync retornou codigo {res} ao enviar {dest_name}")
             except Exception as se:
                 print(f"    [AVISO] Falha ao enviar para servidor: {se}")
 
