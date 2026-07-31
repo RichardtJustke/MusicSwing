@@ -162,13 +162,28 @@ def main():
             audio = MP3(src, easy=True)
             audio.add_tags()
 
-        audio["artist"] = args.artist
-        audio["albumartist"] = args.artist
-        audio["album"] = args.album
+        # Preserva o artista original extraído pelo yt-dlp do YouTube caso args.artist seja "Desconhecido"
+        existing_artist = audio.get("artist", [""])[0] if audio.get("artist") else ""
+        final_artist = existing_artist.strip() if (args.artist.lower() in ("desconhecido", "unknown", "") and existing_artist and existing_artist.strip()) else args.artist
+
+        # Preserva o álbum original extraído pelo yt-dlp do YouTube caso args.album seja um ID (ex: OLAK... ou PL...)
+        existing_album = audio.get("album", [""])[0] if audio.get("album") else ""
+        is_album_id = bool(re.match(r"^(PL|OLAK|UC)[A-Za-z0-9_-]+$", args.album))
+        final_album = existing_album.strip() if (is_album_id and existing_album and existing_album.strip()) else args.album
+
+        audio["artist"] = final_artist
+        audio["albumartist"] = final_artist
+        if final_album:
+            audio["album"] = final_album
         audio["title"] = title
         audio["genre"] = genre
         audio["tracknumber"] = track_num
         audio.save()
+
+        artist_dir = sanitize(final_artist)
+        album_dir = sanitize(final_album or "Álbum")
+        dest_dir = os.path.join(args.output, genre_dir, artist_dir, album_dir)
+        os.makedirs(dest_dir, exist_ok=True)
 
         dest_name = f"{int(track_num):02d} - {sanitize(title)}.mp3"
         dest_path = os.path.join(dest_dir, dest_name)
