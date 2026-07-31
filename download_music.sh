@@ -256,6 +256,8 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --no-overwrites
     --no-check-certificates
     -N 4
+    --sleep-requests 1.5
+    --extractor-args "youtube:player_client=android,mweb"
     --exec "after_move:python3 '$SCRIPT_DIR/tag_and_sort.py' --file {} --artist '$ARTIST' --album '$ALBUM' --genre '$GENRE' --output '$MUSIC_ROOT'"
     --remote-components ejs:github
     --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
@@ -369,6 +371,8 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --no-overwrites
       --no-check-certificates
       -N 4
+      --sleep-requests 1.5
+      --extractor-args "youtube:player_client=android,mweb"
       --exec "after_move:python3 '$SCRIPT_DIR/tag_and_sort.py' --file {} --artist '$ARTIST' --album '$ALBUM' --genre '$GENRE' --output '$MUSIC_ROOT'"
       --remote-components ejs:github
       --download-archive "$ARCHIVES_DIR/${SAFE_NAME}.txt"
