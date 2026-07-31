@@ -48,6 +48,11 @@ else
 fi
 MUSIC_ROOT="${MUSIC_ROOT:-$DEFAULT_MUSIC_ROOT}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
+SERVER_SYNC="${SERVER_SYNC:-}"
+
+if [[ -n "$SERVER_SYNC" ]]; then
+  echo "  [INFO] Sincronização ao vivo para o servidor ativa: $SERVER_SYNC"
+fi
 
 if [[ -f "$COOKIES" && "$USE_OAUTH2" != "true" ]]; then
   if yt-dlp --no-check-certificates --cookies "$COOKIES" "https://www.youtube.com/watch?v=B1kJ9RnHZ9o" --simulate 2>&1 | grep -q -i "cookies are no longer valid"; then

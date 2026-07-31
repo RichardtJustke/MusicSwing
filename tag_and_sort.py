@@ -183,6 +183,17 @@ def main():
         shutil.move(src, dest_path)
         print(f"    [MOVIDO PARA BIBLIOTECA] {dest_name}")
 
+        server_sync = os.environ.get("SERVER_SYNC")
+        if server_sync:
+            try:
+                rel_path = os.path.relpath(dest_path, args.output)
+                # Garante transferencia via rsync para o servidor
+                sync_cmd = f"rsync -azR '{rel_path}' '{server_sync}'"
+                os.system(f"cd '{args.output}' && {sync_cmd} 2>/dev/null")
+                print(f"    [ENVIADO PARA SERVIDOR] -> {server_sync}/{rel_path}")
+            except Exception as se:
+                print(f"    [AVISO] Falha ao enviar para servidor: {se}")
+
     if os.path.isdir(target_input):
         print(f"    -> {len(files_to_process)} faixa(s) organizada(s) em {dest_dir}")
 
