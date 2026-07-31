@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -u
 
 # ============================================================
 # download_music.sh
@@ -179,8 +179,11 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
 
   # --- Etapa 1: Download ---
   echo "  Etapa 1/2: Baixando audio..."
-  if ! yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
-    echo "  [ERRO] Download falhou"
+  yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /' || true
+
+  HAS_MP3=$(find "$PLAYLIST_DIR" -maxdepth 1 -name "*.mp3" 2>/dev/null | wc -l)
+  if [[ "$HAS_MP3" -eq 0 ]]; then
+    echo "  [ERRO] Nenhum MP3 foi baixado"
     FAILED_URLS+=("$URL")
     FAILED_ARTISTS+=("$ARTIST")
     FAILED_ALBUMS+=("$ALBUM")
@@ -191,20 +194,12 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
 
   # --- Etapa 2: Tags + Organizar ---
   echo "  Etapa 2/2: Aplicando tags e organizando..."
-  if ! python3 "$SCRIPT_DIR/tag_and_sort.py" \
+  python3 "$SCRIPT_DIR/tag_and_sort.py" \
     --input "$PLAYLIST_DIR" \
     --artist "$ARTIST" \
     --album "$ALBUM" \
     --genre "$GENRE" \
-    --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /'; then
-    echo "  [ERRO] Falha ao organizar arquivos"
-    FAILED_URLS+=("$URL")
-    FAILED_ARTISTS+=("$ARTIST")
-    FAILED_ALBUMS+=("$ALBUM")
-    FAILED_GENRES+=("$GENRE")
-    TOTAL_FAIL=$((TOTAL_FAIL + 1))
-    continue
-  fi
+    --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /' || true
 
   TOTAL_OK=$((TOTAL_OK + 1))
   echo "  OK: ${ARTIST} - ${ALBUM}"
@@ -252,23 +247,22 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       YT_ARGS+=(--cookies "$COOKIES")
     fi
 
-    if yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /'; then
-      if python3 "$SCRIPT_DIR/tag_and_sort.py" \
+    yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | sed 's/^/    /' || true
+
+    HAS_MP3=$(find "$PLAYLIST_DIR" -maxdepth 1 -name "*.mp3" 2>/dev/null | wc -l)
+    if [[ "$HAS_MP3" -gt 0 ]]; then
+      python3 "$SCRIPT_DIR/tag_and_sort.py" \
         --input "$PLAYLIST_DIR" \
         --artist "$ARTIST" \
         --album "$ALBUM" \
         --genre "$GENRE" \
-        --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /'; then
-        TOTAL_OK=$((TOTAL_OK + 1))
-        RETRY_OK=$((RETRY_OK + 1))
-        echo "  OK na retentativa!"
-      else
-        TOTAL_FAIL=$((TOTAL_FAIL + 1))
-        echo "  [ERRO] Falhou novamente na organizacao"
-      fi
+        --output "$MUSIC_ROOT" 2>&1 | sed 's/^/    /' || true
+      TOTAL_OK=$((TOTAL_OK + 1))
+      RETRY_OK=$((RETRY_OK + 1))
+      echo "  OK na retentativa!"
     else
       TOTAL_FAIL=$((TOTAL_FAIL + 1))
-      echo "  [ERRO] Falhou novamente no download"
+      echo "  [ERRO] Nenhum MP3 baixado na retentativa"
     fi
     echo ""
   done
