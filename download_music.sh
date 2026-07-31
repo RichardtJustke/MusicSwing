@@ -301,9 +301,7 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     YT_ARGS+=(--js-runtimes deno)
   fi
 
-  if [[ "$USE_OAUTH2" == "true" ]]; then
-    YT_ARGS+=(--username oauth2)
-  elif [[ -n "${COOKIES:-}" && -f "$COOKIES" ]]; then
+  if [[ -n "${COOKIES:-}" && -f "$COOKIES" ]]; then
     YT_ARGS+=(--cookies "$COOKIES")
   fi
 
@@ -416,10 +414,6 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       YT_ARGS+=(--js-runtimes node)
     elif command -v deno &>/dev/null; then
       YT_ARGS+=(--js-runtimes deno)
-    fi
-
-    if [[ "$USE_OAUTH2" == "true" ]]; then
-      YT_ARGS+=(--username oauth2)
     fi
 
     # Tenta retentativa sem cookies caso cookies antigos tenham causado falha por auth/bot block
