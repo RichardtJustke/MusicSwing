@@ -309,7 +309,7 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   echo -e "  ${CYAN}Etapa 1/2: Baixando áudios do YouTube...${RESET}"
   
   while true; do
-    yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | sed 's/^/    /' || true
+    yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | python3 "$SCRIPT_DIR/format_progress.py" || true
     
     if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG"; then
       echo ""
@@ -436,7 +436,7 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
     fi
 
     while true; do
-      yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | sed 's/^/    /' || true
+      yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | python3 "$SCRIPT_DIR/format_progress.py" || true
       if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG"; then
         echo -e "${YELLOW}  [PAUSA AUTOMÁTICA] Limite do YouTube atingido. Pausando por 30 minutos...${RESET}"
         
