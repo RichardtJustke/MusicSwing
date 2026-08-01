@@ -286,7 +286,7 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --no-overwrites
     --no-check-certificates
     -N 4
-    --sleep-requests 2.5
+    --sleep-requests 3.5
     --sleep-interval 1
     --max-sleep-interval 3
     --extractor-args "youtube:player_client=android,mweb"
@@ -419,7 +419,7 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --no-overwrites
       --no-check-certificates
       -N 4
-      --sleep-requests 2.5
+      --sleep-requests 3.5
       --sleep-interval 1
       --max-sleep-interval 3
       --extractor-args "youtube:player_client=android,mweb"
