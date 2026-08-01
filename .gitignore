@@ -1,4 +1,14 @@
+# Virtual environment
+venv/
+venv-*/
+
+# Music files & staging
+musica/
+musica_flat/
+/tmp/
+
+# Logs & temporary files
+download.log
 cookies.txt
-archives/
 *.log
-alteracoes/
+*.tmp
