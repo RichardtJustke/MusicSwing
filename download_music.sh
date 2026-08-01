@@ -311,7 +311,7 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   while true; do
     yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | python3 "$SCRIPT_DIR/format_progress.py" || true
     
-    if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG"; then
+    if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG" || grep -q -i "Sign in to confirm you’re not a bot" "$YT_LOG"; then
       echo ""
       echo -e "${YELLOW}┌──────────────────────────────────────────────────────────────────────────┐${RESET}"
       echo -e "${YELLOW}│ ⏳ ${BOLD}PAUSA AUTOMÁTICA ATIVADA${RESET}${YELLOW} (Limite de requisições do YouTube)   │${RESET}"
@@ -323,10 +323,10 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
       rsync -avz --update "$MUSIC_ROOT/" oracle24:/home/ubuntu/musica/ 2>/dev/null || true
       ssh -o StrictHostKeyChecking=no oracle24 "python3 /home/ubuntu/flatten_library.py /home/ubuntu/musica && sudo docker restart swingmusic" 2>/dev/null || true
       
-      echo -e "${YELLOW}│ 💤 Descansando por 30 minutos (1800s)...                                 │${RESET}"
+      echo -e "${YELLOW}│ 💤 Descansando por 1 hora (3600s)...                                    │${RESET}"
       echo -e "${YELLOW}└──────────────────────────────────────────────────────────────────────────┘${RESET}"
-      sleep 1800
-      echo -e "\n${GREEN}  ✔ 30 minutos concluídos! Retomando downloads automaticamente...${RESET}\n"
+      sleep 3600
+      echo -e "\n${GREEN}  ✔ 1 hora concluída! Retomando downloads automaticamente...${RESET}\n"
       rm -f "$YT_LOG"
       YT_LOG=$(mktemp)
       continue
@@ -437,14 +437,14 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
 
     while true; do
       yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | python3 "$SCRIPT_DIR/format_progress.py" || true
-      if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG"; then
-        echo -e "${YELLOW}  [PAUSA AUTOMÁTICA] Limite do YouTube atingido. Pausando por 30 minutos...${RESET}"
+      if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG" || grep -q -i "Sign in to confirm you’re not a bot" "$YT_LOG"; then
+        echo -e "${YELLOW}  [PAUSA AUTOMÁTICA] Limite do YouTube atingido. Pausando por 1 hora (3600s)...${RESET}"
         
         python3 "$SCRIPT_DIR/flatten_library.py" "$MUSIC_ROOT" 2>/dev/null || true
         rsync -avz --update "$MUSIC_ROOT/" oracle24:/home/ubuntu/musica/ 2>/dev/null || true
         ssh -o StrictHostKeyChecking=no oracle24 "python3 /home/ubuntu/flatten_library.py /home/ubuntu/musica && sudo docker restart swingmusic" 2>/dev/null || true
         
-        sleep 1800
+        sleep 3600
         rm -f "$YT_LOG"
         YT_LOG=$(mktemp)
         continue
