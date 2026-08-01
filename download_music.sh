@@ -2,19 +2,36 @@
 set -u
 
 # ============================================================
-# download_music.sh
-# Baixa playlists do YouTube, organiza em Genero/Artista/Album
-# e deixa pronto pro Swing Music.
-#
-# Uso: ./download_music.sh [arquivo_playlists.txt]
-#
-# Formato do arquivo:
-#   URL|Artista|Album|Genero
-#   URL (autodetecta se nao tiver |)
+# download_music.sh — MusicSwing Downloader v2.5
+# Baixa playlists do YouTube, aplica metadados limpos e
+# sincroniza automaticamente ao vivo com o servidor VPS.
 # ============================================================
 
-# ---- Configuracoes ----
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---- Cores & Formatação ANSI ----
+BOLD="\033[1m"
+DIM="\033[2m"
+RESET="\033[0m"
+
+CYAN="\033[1;36m"
+MAGENTA="\033[1;35m"
+BLUE="\033[1;34m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+RED="\033[1;31m"
+WHITE="\033[1;37m"
+
+banner() {
+  echo -e "${MAGENTA}"
+  echo "  ███╗   ███╗██║   ██║███████╗██║██████╗ ███████╗██║███╗   ██╗██████╗ "
+  echo "  ████╗ ████║██║   ██║██╔════╝██║██╔════╝ ██╔════╝██║████╗  ██║██╔════╝ "
+  echo "  ██╔████╔██║██║   ██║███████╗██║██║      ███████╗██║██╔██╗ ██║██║  ███╗"
+  echo "  ██║╚██╔╝██║██║   ██║╚════██║██║██║      ╚════██║██║██║╚██╗██║██║   ██║"
+  echo "  ██║ ╚═╝ ██║╚██████╔╝███████║██║╚██████╗ ███████║██║██║ ╚████║╚██████╔╝"
+  echo "  ╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ "
+  echo -e "${CYAN}                 🎵 Downloader & Auto-Sync Server v2.5 🚀${RESET}\n"
+}
 
 # ---- PATH & Virtualenv ----
 for p in "$SCRIPT_DIR/venv/bin" "$HOME/venv-yt/bin" "$HOME/.local/bin"; do
@@ -46,46 +63,44 @@ if [[ -w "/root/musica" || ( ! -e "/root/musica" && -w "/root" ) ]]; then
   SERVER_SYNC=""
 else
   DEFAULT_MUSIC_ROOT="$SCRIPT_DIR/musica"
-  SERVER_SYNC="${SERVER_SYNC:-ubuntu@100.107.36.118:/home/ubuntu/musica}"
+  SERVER_SYNC="${SERVER_SYNC:-oracle24:/home/ubuntu/musica}"
 fi
 MUSIC_ROOT="${MUSIC_ROOT:-$DEFAULT_MUSIC_ROOT}"
 COOKIES="${COOKIES:-$SCRIPT_DIR/cookies.txt}"
 
+banner
+
 if [[ -n "$SERVER_SYNC" ]]; then
-  echo "  [INFO] Sincronização ao vivo para o servidor ativa: $SERVER_SYNC"
+  echo -e "${GREEN}  ✔ Sincronização ao vivo para a VPS ativa:${RESET} ${CYAN}${SERVER_SYNC}${RESET}\n"
 fi
 
 if [[ -f "$COOKIES" && "$USE_OAUTH2" != "true" ]]; then
   if yt-dlp --no-check-certificates --cookies "$COOKIES" "https://www.youtube.com/watch?v=B1kJ9RnHZ9o" --simulate 2>&1 | grep -q -i "cookies are no longer valid"; then
-    echo "  [AVISO] $COOKIES contem cookies expirados do YouTube!"
-    echo "  [AVISO] Para resolver o bloqueio de bot do YouTube:"
-    echo "          1. Atualize o arquivo cookies.txt exportando do seu navegador"
-    echo "          2. Ou rode o script com OAuth2: ./download_music.sh --oauth2"
+    echo -e "${YELLOW}  [AVISO] Cookies expirados no arquivo cookies.txt${RESET}"
     COOKIES=""
   fi
 fi
+
 ARCHIVES_DIR="$SCRIPT_DIR/archives"
 LOG_FILE="$SCRIPT_DIR/download.log"
 
 mkdir -p "$ARCHIVES_DIR"
 STAGING="$(mktemp -d)"
 ANALISE=$(mktemp)
-# Ignora fechamento do terminal/SSH (SIGHUP) para nao interromper a execucao
+
 trap '' HUP
 trap 'rm -rf "$STAGING" "$ANALISE"' EXIT
 
-# Log de tudo que rodar (terminal + arquivo)
 exec > >(tee "$LOG_FILE")
 exec 2>&1
 
 # ---- Dependencias ----
-command -v python3 >/dev/null || { echo "python3 nao encontrado."; exit 1; }
+command -v python3 >/dev/null || { echo -e "${RED}[ERRO] Python3 não encontrado.${RESET}"; exit 1; }
 
 if ! command -v yt-dlp >/dev/null || ! python3 -c "import mutagen" 2>/dev/null; then
-  echo "  [INFO] Dependências (yt-dlp / mutagen) não encontradas no sistema."
-  echo "  [INFO] Criando ambiente virtual em $SCRIPT_DIR/venv e instalando pacotes..."
-  python3 -m venv "$SCRIPT_DIR/venv" || { echo "[ERRO] Não foi possível criar o venv."; exit 1; }
-  "$SCRIPT_DIR/venv/bin/pip" install --upgrade pip yt-dlp mutagen requests yt-dlp-youtube-oauth2 2>&1 | tail -n 5
+  echo -e "${CYAN}  [INFO] Instalando dependências (yt-dlp / mutagen)...${RESET}"
+  python3 -m venv "$SCRIPT_DIR/venv" || { echo -e "${RED}[ERRO] Falha ao criar venv.${RESET}"; exit 1; }
+  "$SCRIPT_DIR/venv/bin/pip" install --upgrade pip yt-dlp mutagen requests yt-dlp-youtube-oauth2 2>&1 | tail -n 3
   export PATH="$SCRIPT_DIR/venv/bin:$PATH"
 fi
 
@@ -94,26 +109,18 @@ if [[ -f "$SCRIPT_DIR/venv/bin/pip" ]]; then
   "$SCRIPT_DIR/venv/bin/pip" install -q yt-dlp-youtube-oauth2 2>/dev/null || true
 fi
 
-# JS runtime para resolver JS challenges do YouTube (Node ou Deno)
 if ! command -v deno &>/dev/null && ! command -v node &>/dev/null; then
-  echo "  Nenhum JS runtime (Node/Deno) encontrado. Tentando instalar Deno..."
-  curl -fsSL https://deno.land/install.sh | sh -s -- -y 2>&1 | tail -1 || true
   export DENO_INSTALL="$HOME/.deno"
   export PATH="$DENO_INSTALL/bin:$PATH"
 fi
-if [[ -d "$HOME/.deno/bin" ]] && ! command -v deno &>/dev/null; then
-  export PATH="$HOME/.deno/bin:$PATH"
-fi
 
 if [[ ! -f "$CONFIG" ]]; then
-  echo "Arquivo de playlists nao encontrado: $CONFIG"
-  echo "Copie playlists.example.txt para playlists.txt e edite."
+  echo -e "${RED}[ERRO] Arquivo de playlists não encontrado: $CONFIG${RESET}"
   exit 1
 fi
 
-# ---- Utilitarios ----
 separador() {
-  printf '%*s\n' 80 '' | tr ' ' '='
+  echo -e "${BLUE}==============================================================================${RESET}"
 }
 
 extrair_id() {
@@ -128,7 +135,7 @@ extrair_id() {
 # FASE 1: ANALISAR PLAYLISTS
 # ============================================================
 separador
-echo "  FASE 1: ANALISANDO PLAYLISTS"
+echo -e "${MAGENTA}${BOLD}   🔍 FASE 1: ANALISANDO & ORDENANDO PLAYLISTS${RESET}"
 separador
 
 TOTAL_PLAYLISTS=0
@@ -144,7 +151,7 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
 
   TOTAL_PLAYLISTS=$((TOTAL_PLAYLISTS + 1))
 
-  printf "  Playlist %2d: %-50s" "$TOTAL_PLAYLISTS" "${URL:0:50}"
+  printf "  ${CYAN}Playlist %2d:${RESET} %-48s" "$TOTAL_PLAYLISTS" "${URL:0:48}"
 
   if [[ -z "${ARTIST// }" ]]; then
     FALLBACK=$(extrair_id "$URL")
@@ -152,7 +159,6 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
     ALBUM="$FALLBACK"
     GENRE="auto"
 
-    # Detecta tamanho da playlist via yt-dlp
     echo -n " ID: $FALLBACK"
     TAMANHO=$(yt-dlp --flat-playlist --print id --ignore-errors --no-check-certificates \
       ${COOKIES:+--cookies "$COOKIES"} \
@@ -161,19 +167,17 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
       TAMANHO="?"
       echo ""
     else
-      echo " ($TAMANHO faixas)"
+      echo -e " (${GREEN}${TAMANHO} faixas${RESET})"
     fi
   else
     TAMANHO="?"
-    echo "  OK  (usando dados manuais)"
+    echo -e " ${GREEN}✔ OK (dados manuais)${RESET}"
   fi
 
   ARTIST="$(echo "$ARTIST" | xargs)"
   ALBUM="$(echo "$ALBUM" | xargs)"
   GENRE="$(echo "${GENRE:-auto}" | xargs)"
 
-  # Salva no arquivo de analise: TAMANHO|ARTIST|ALBUM|GENRE|URL
-  # Usa "0" como fallback se TAMANHO nao for numero
   if [[ "$TAMANHO" =~ ^[0-9]+$ ]]; then
     printf "%010d|%s|%s|%s|%s\n" "$TAMANHO" "$ARTIST" "$ALBUM" "$GENRE" "$URL" >> "$ANALISE"
   else
@@ -182,18 +186,17 @@ while IFS='|' read -r URL ARTIST ALBUM GENRE || [ -n "${URL:-}" ]; do
 done < "$CONFIG"
 
 if [[ $TOTAL_PLAYLISTS -eq 0 ]]; then
-  echo "  Nenhuma playlist valida encontrada em $CONFIG"
+  echo -e "${RED}[ERRO] Nenhuma playlist válida encontrada em $CONFIG${RESET}"
   exit 1
 fi
 
-# ---- Ordenar por tamanho (menor primeiro) ----
 SORTED=$(sort -t'|' -k1 -n "$ANALISE" | head -100)
 
 echo ""
 separador
-echo "  ORDEM DE DOWNLOAD (MENOR PRIMEIRO)"
+echo -e "${CYAN}${BOLD}   📋 ORDEM DE DOWNLOAD (Menor primeiro para entrega rápida)${RESET}"
 separador
-printf "  %-3s %-38s %-18s %7s %10s\n" "#" "Playlist" "Artista" "Faixas" "Estimado"
+printf "  ${BOLD}%-3s %-38s %-18s %7s %10s${RESET}\n" "#" "Playlist / ID" "Artista" "Faixas" "Estimado"
 printf "  %-3s %-38s %-18s %7s %10s\n" "---" "--------------------------------------" "------------------" "-------" "----------"
 
 TOTAL_EST_SEG=0
@@ -217,7 +220,7 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     est="?"
   fi
 
-  printf "  %3d %-38s %-18s %7d %10s\n" "$ORDER" "$nome" "$artista" "$((10#$TAMANHO))" "$est"
+  printf "  ${YELLOW}%3d${RESET} %-38s %-18s ${GREEN}%7d${RESET} %10s\n" "$ORDER" "$nome" "$artista" "$((10#$TAMANHO))" "$est"
 done <<< "$SORTED"
 
 if [[ "$TOTAL_EST_SEG" -gt 0 ]]; then
@@ -226,17 +229,16 @@ if [[ "$TOTAL_EST_SEG" -gt 0 ]]; then
   else
     total_est=$(printf "%dm%02ds" $((TOTAL_EST_SEG / 60)) $((TOTAL_EST_SEG % 60)))
   fi
-  echo ""
-  echo "  Tempo estimado total: $total_est (~1s/faixa + overhead)"
+  echo -e "\n  ${GREEN}⏱ Tempo estimado total de processamento: ${BOLD}${total_est}${RESET}"
 fi
 
 echo ""
 
-## ============================================================
-# FASE 2: BAIXANDO PLAYLISTS
+# ============================================================
+# FASE 2: BAIXANDO & SINCRONIZANDO PLAYLISTS
 # ============================================================
 separador
-echo "  FASE 2: BAIXANDO PLAYLISTS"
+echo -e "${MAGENTA}${BOLD}   ⚡ FASE 2: BAIXANDO & SINCRONIZANDO AO VIVO COM O SERVIDOR${RESET}"
 separador
 echo ""
 
@@ -258,33 +260,24 @@ extrair_motivo_erro() {
   elif grep -q -i "Private video" "$log_file" || grep -q -i "is private" "$log_file"; then
     echo "Playlist ou vídeo marcado como privado"
   elif grep -q -i "does not exist" "$log_file"; then
-    echo "Playlist não existe ou foi removida"
-  elif grep -q -i "HTTP Error 429" "$log_file"; then
-    echo "Rate limit do YouTube atingido (HTTP 429)"
+    echo "Playlist não encontrada ou deletada"
   else
-    local err_line
-    err_line=$(grep "ERROR:" "$log_file" | head -n 1 | sed 's/.*ERROR:\s*//')
-    if [[ -n "$err_line" ]]; then
-      echo "$err_line"
-    else
-      echo "Nenhum MP3 baixado (Erro desconhecido na extração)"
-    fi
+    echo "Erro genérico no download"
   fi
 }
 
 while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   ORDER=$((ORDER + 1))
 
-  echo "  [${ORDER}/${TOTAL_PLAYLISTS}] ${ARTIST} - ${ALBUM}"
-  echo "  --------------------------------------------------"
+  echo -e "${CYAN}------------------------------------------------------------------------------${RESET}"
+  echo -e "${GREEN}${BOLD}  [${ORDER}/${TOTAL_PLAYLISTS}] ▶ ${ARTIST} — ${ALBUM}${RESET}"
+  echo -e "${CYAN}------------------------------------------------------------------------------${RESET}"
 
-  # Prepara diretorio
   SAFE_NAME="$(echo "${ARTIST}_${ALBUM}" | tr ' /' '__')"
   PLAYLIST_DIR="$STAGING/$SAFE_NAME"
   YT_LOG=$(mktemp)
   mkdir -p "$PLAYLIST_DIR"
 
-  # Monta argumentos do yt-dlp
   YT_ARGS=(
     -x --audio-format mp3 --audio-quality 0
     --embed-thumbnail
@@ -293,7 +286,9 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     --no-overwrites
     --no-check-certificates
     -N 4
-    --sleep-requests 1.5
+    --sleep-requests 2.5
+    --sleep-interval 1
+    --max-sleep-interval 3
     --extractor-args "youtube:player_client=android,mweb"
     --exec "after_move:python3 '$SCRIPT_DIR/tag_and_sort.py' --file {} --artist '$ARTIST' --album '$ALBUM' --genre '$GENRE' --output '$MUSIC_ROOT'"
     --remote-components ejs:github
@@ -311,25 +306,46 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
     YT_ARGS+=(--cookies "$COOKIES")
   fi
 
-  # --- Etapa 1: Download ---
-  echo "  Etapa 1/2: Baixando audio..."
-  yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | sed 's/^/    /' || true
+  echo -e "  ${CYAN}Etapa 1/2: Baixando áudios do YouTube...${RESET}"
+  
+  while true; do
+    yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | sed 's/^/    /' || true
+    
+    if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG"; then
+      echo ""
+      echo -e "${YELLOW}┌──────────────────────────────────────────────────────────────────────────┐${RESET}"
+      echo -e "${YELLOW}│ ⏳ ${BOLD}PAUSA AUTOMÁTICA ATIVADA${RESET}${YELLOW} (Limite de requisições do YouTube)   │${RESET}"
+      echo -e "${YELLOW}├──────────────────────────────────────────────────────────────────────────┤${RESET}"
+      echo -e "${YELLOW}│ 🕒 Horário de Início: ${BOLD}$(date '+%H:%M:%S')${RESET}${YELLOW}                                  │${RESET}"
+      echo -e "${YELLOW}│ 🚀 VPS Sincronização: ${GREEN}${BOLD}✔ Enviando faixas recentes ao servidor...${RESET}${YELLOW}  │${RESET}"
+      
+      python3 "$SCRIPT_DIR/flatten_library.py" "$MUSIC_ROOT" 2>/dev/null || true
+      rsync -avz --update "$MUSIC_ROOT/" oracle24:/home/ubuntu/musica/ 2>/dev/null || true
+      ssh -o StrictHostKeyChecking=no oracle24 "python3 /home/ubuntu/flatten_library.py /home/ubuntu/musica && sudo docker restart swingmusic" 2>/dev/null || true
+      
+      echo -e "${YELLOW}│ 💤 Descansando por 30 minutos (1800s)...                                 │${RESET}"
+      echo -e "${YELLOW}└──────────────────────────────────────────────────────────────────────────┘${RESET}"
+      sleep 1800
+      echo -e "\n${GREEN}  ✔ 30 minutos concluídos! Retomando downloads automaticamente...${RESET}\n"
+      rm -f "$YT_LOG"
+      YT_LOG=$(mktemp)
+      continue
+    fi
+    break
+  done
 
   HAS_MP3=$(find "$PLAYLIST_DIR" -maxdepth 1 -name "*.mp3" 2>/dev/null | wc -l)
   if [[ "$HAS_MP3" -eq 0 ]]; then
     if grep -q -i "has already been recorded in the archive" "$YT_LOG"; then
       rm -f "$YT_LOG"
       TOTAL_OK=$((TOTAL_OK + 1))
-      echo "  [OK] Playlist já totalmente baixada (faixas já existentes na biblioteca)"
-      echo ""
+      echo -e "  ${GREEN}✔ [OK] Playlist já baixada anteriormente (registrada no histórico)${RESET}\n"
       continue
     fi
     MOTIVO=$(extrair_motivo_erro "$YT_LOG")
     rm -f "$YT_LOG"
-    echo ""
-    echo "  [ERRO CRÍTICO] Falha ao baixar playlist: ${ARTIST} - ${ALBUM}"
-    echo "  [MOTIVO] $MOTIVO"
-    echo ""
+    echo -e "\n  ${RED}✖ [ERRO CRÍTICO] Falha ao baixar playlist: ${ARTIST} - ${ALBUM}${RESET}"
+    echo -e "  ${RED}  Motivo: $MOTIVO${RESET}\n"
     FAILED_URLS+=("$URL")
     FAILED_ARTISTS+=("$ARTIST")
     FAILED_ALBUMS+=("$ALBUM")
@@ -340,8 +356,7 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   fi
   rm -f "$YT_LOG"
 
-  # --- Etapa 2: Tags + Organizar ---
-  echo "  Etapa 2/2: Aplicando tags e organizando..."
+  echo -e "  ${CYAN}Etapa 2/2: Aplicando tags de áudio e organizando...${RESET}"
   python3 "$SCRIPT_DIR/tag_and_sort.py" \
     --input "$PLAYLIST_DIR" \
     --artist "$ARTIST" \
@@ -351,10 +366,8 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   TAGS_EXIT="${PIPESTATUS[0]:-1}"
 
   if [[ "$TAGS_EXIT" -ne 0 ]]; then
-    MOTIVO="Falha ao organizar tags com tag_and_sort.py (Exit code: $TAGS_EXIT)"
-    echo ""
-    echo "  [ERRO CRÍTICO] $MOTIVO"
-    echo ""
+    MOTIVO="Falha ao organizar tags com tag_and_sort.py"
+    echo -e "\n  ${RED}✖ [ERRO] $MOTIVO${RESET}\n"
     FAILED_URLS+=("$URL")
     FAILED_ARTISTS+=("$ARTIST")
     FAILED_ALBUMS+=("$ALBUM")
@@ -365,35 +378,33 @@ while IFS='|' read -r TAMANHO ARTIST ALBUM GENRE URL; do
   fi
 
   TOTAL_OK=$((TOTAL_OK + 1))
-  echo "  [OK] Sucesso: ${ARTIST} - ${ALBUM}"
-  echo ""
+  echo -e "  ${GREEN}✔ [OK] Sucesso: ${ARTIST} - ${ALBUM}${RESET}\n"
 
 done <<< "$SORTED"
 
 # ============================================================
-# FASE 3: RETENTATIVA
+# FASE 3: RETENTATIVA DE FALHAS
 # ============================================================
-STILL_FAILED_URLS=()
-STILL_FAILED_ARTISTS=()
-STILL_FAILED_ALBUMS=()
-STILL_FAILED_REASONS=()
-
 if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
   echo ""
   separador
-  echo "  FASE 3: RETENTATIVA (${#FAILED_URLS[@]} playlist(s) com falhas)"
+  echo -e "${YELLOW}${BOLD}   🔄 FASE 3: RETENTATIVA AUTOMÁTICA DE PLAYLISTS COM ERRO${RESET}"
   separador
   echo ""
 
-  TOTAL_FAIL=0
+  STILL_FAILED_URLS=()
+  STILL_FAILED_ARTISTS=()
+  STILL_FAILED_ALBUMS=()
+  STILL_FAILED_REASONS=()
+
   for i in "${!FAILED_URLS[@]}"; do
     URL="${FAILED_URLS[$i]}"
     ARTIST="${FAILED_ARTISTS[$i]}"
     ALBUM="${FAILED_ALBUMS[$i]}"
     GENRE="${FAILED_GENRES[$i]}"
+    MOTIVO="${FAILED_REASONS[$i]}"
 
-    echo "  Retentativa [$((i + 1))/${#FAILED_URLS[@]}]: ${ARTIST} - ${ALBUM}"
-    echo "  --------------------------------------------------"
+    echo -e "  ${YELLOW}Tentando novamente: ${ARTIST} - ${ALBUM}${RESET}"
 
     SAFE_NAME="$(echo "${ARTIST}_${ALBUM}" | tr ' /' '__')"
     PLAYLIST_DIR="$STAGING/$SAFE_NAME"
@@ -408,7 +419,9 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       --no-overwrites
       --no-check-certificates
       -N 4
-      --sleep-requests 1.5
+      --sleep-requests 2.5
+      --sleep-interval 1
+      --max-sleep-interval 3
       --extractor-args "youtube:player_client=android,mweb"
       --exec "after_move:python3 '$SCRIPT_DIR/tag_and_sort.py' --file {} --artist '$ARTIST' --album '$ALBUM' --genre '$GENRE' --output '$MUSIC_ROOT'"
       --remote-components ejs:github
@@ -422,8 +435,22 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       YT_ARGS+=(--js-runtimes deno)
     fi
 
-    # Tenta retentativa sem cookies caso cookies antigos tenham causado falha por auth/bot block
-    yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | sed 's/^/    /' || true
+    while true; do
+      yt-dlp "${YT_ARGS[@]}" "$URL" 2>&1 | tee "$YT_LOG" | sed 's/^/    /' || true
+      if grep -q -i "rate-limited by YouTube" "$YT_LOG" || grep -q -i "HTTP Error 429" "$YT_LOG"; then
+        echo -e "${YELLOW}  [PAUSA AUTOMÁTICA] Limite do YouTube atingido. Pausando por 30 minutos...${RESET}"
+        
+        python3 "$SCRIPT_DIR/flatten_library.py" "$MUSIC_ROOT" 2>/dev/null || true
+        rsync -avz --update "$MUSIC_ROOT/" oracle24:/home/ubuntu/musica/ 2>/dev/null || true
+        ssh -o StrictHostKeyChecking=no oracle24 "python3 /home/ubuntu/flatten_library.py /home/ubuntu/musica && sudo docker restart swingmusic" 2>/dev/null || true
+        
+        sleep 1800
+        rm -f "$YT_LOG"
+        YT_LOG=$(mktemp)
+        continue
+      fi
+      break
+    done
 
     HAS_MP3=$(find "$PLAYLIST_DIR" -maxdepth 1 -name "*.mp3" 2>/dev/null | wc -l)
     if [[ "$HAS_MP3" -gt 0 ]]; then
@@ -436,7 +463,7 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
       TAGS_EXIT="${PIPESTATUS[0]:-1}"
       if [[ "$TAGS_EXIT" -eq 0 ]]; then
         TOTAL_OK=$((TOTAL_OK + 1))
-        echo "  [OK RETENTATIVA] Sucesso na retentativa!"
+        echo -e "  ${GREEN}✔ [OK RETENTATIVA] Sucesso na retentativa!${RESET}"
       else
         MOTIVO="Falha ao aplicar tags na retentativa (Exit: $TAGS_EXIT)"
         TOTAL_FAIL=$((TOTAL_FAIL + 1))
@@ -444,63 +471,61 @@ if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
         STILL_FAILED_ARTISTS+=("$ARTIST")
         STILL_FAILED_ALBUMS+=("$ALBUM")
         STILL_FAILED_REASONS+=("$MOTIVO")
-        echo "  [ERRO RETENTATIVA] $MOTIVO"
+        echo -e "  ${RED}✖ [ERRO RETENTATIVA] $MOTIVO${RESET}"
       fi
     else
-      if grep -q -i "has already been recorded in the archive" "$YT_LOG"; then
-        TOTAL_OK=$((TOTAL_OK + 1))
-        echo "  [OK RETENTATIVA] Playlist já totalmente baixada anteriormente"
-      else
-        MOTIVO=$(extrair_motivo_erro "$YT_LOG")
-        TOTAL_FAIL=$((TOTAL_FAIL + 1))
-        STILL_FAILED_URLS+=("$URL")
-        STILL_FAILED_ARTISTS+=("$ARTIST")
-        STILL_FAILED_ALBUMS+=("$ALBUM")
-        STILL_FAILED_REASONS+=("$MOTIVO")
-        echo "  [ERRO RETENTATIVA] $MOTIVO"
-      fi
+      MOTIVO=$(extrair_motivo_erro "$YT_LOG")
+      TOTAL_FAIL=$((TOTAL_FAIL + 1))
+      STILL_FAILED_URLS+=("$URL")
+      STILL_FAILED_ARTISTS+=("$ARTIST")
+      STILL_FAILED_ALBUMS+=("$ALBUM")
+      STILL_FAILED_REASONS+=("$MOTIVO")
+      echo -e "  ${RED}✖ [ERRO RETENTATIVA] $MOTIVO${RESET}"
     fi
     rm -f "$YT_LOG"
-    echo ""
   done
+
+  FAILED_URLS=("${STILL_FAILED_URLS[@]:-}")
+  FAILED_ARTISTS=("${STILL_FAILED_ARTISTS[@]:-}")
+  FAILED_ALBUMS=("${STILL_FAILED_ALBUMS[@]:-}")
+  FAILED_REASONS=("${STILL_FAILED_REASONS[@]:-}")
+fi
+
+# Sincronizacao final com o servidor
+if [[ -n "$SERVER_SYNC" ]]; then
+  echo ""
+  echo -e "${CYAN}  🚀 Executando sincronização final com o servidor VPS...${RESET}"
+  python3 "$SCRIPT_DIR/flatten_library.py" "$MUSIC_ROOT" 2>/dev/null || true
+  rsync -avz --update "$MUSIC_ROOT/" oracle24:/home/ubuntu/musica/ 2>/dev/null || true
+  ssh -o StrictHostKeyChecking=no oracle24 "python3 /home/ubuntu/flatten_library.py /home/ubuntu/musica && sudo docker restart swingmusic" 2>/dev/null || true
 fi
 
 # ============================================================
-# SUMARIO FINAL
+# RELATORIO FINAL
 # ============================================================
 echo ""
 separador
-echo "  SUMARIO FINAL"
+echo -e "${MAGENTA}${BOLD}   📊 PAINEL FINAL DE RESULTADOS & SINCRONIZAÇÃO${RESET}"
 separador
 echo ""
-echo "  Total de playlists com sucesso: $TOTAL_OK"
-echo "  Total de playlists com falha:   $TOTAL_FAIL"
-echo "  Biblioteca de música em:        $MUSIC_ROOT"
+echo -e "  ${GREEN}✔ Playlists Baixadas com Sucesso:${RESET} ${BOLD}${TOTAL_OK}${RESET}"
+echo -e "  ${RED}✖ Playlists com Falhas:${RESET}             ${BOLD}${TOTAL_FAIL}${RESET}"
+echo -e "  ${CYAN}☁ Servidor VPS Target:${RESET}              ${BOLD}${SERVER_SYNC:-Local}${RESET}"
+echo -e "  ${WHITE}📁 Pasta Local de Música:${RESET}           ${BOLD}${MUSIC_ROOT}${RESET}"
+echo -e "  ${WHITE}📄 Arquivo de Log:${RESET}                   ${BOLD}${LOG_FILE}${RESET}"
 echo ""
 
-if [[ ${#STILL_FAILED_URLS[@]} -gt 0 ]]; then
-  separador
-  echo "  DETALHES DAS FALHAS (${#STILL_FAILED_URLS[@]} playlist(s))"
-  separador
-  for i in "${!STILL_FAILED_URLS[@]}"; do
-    echo "  [$((i+1))] ${STILL_FAILED_ARTISTS[$i]} - ${STILL_FAILED_ALBUMS[$i]}"
-    echo "      URL:    ${STILL_FAILED_URLS[$i]}"
-    echo "      MOTIVO: ${STILL_FAILED_REASONS[$i]}"
-    echo ""
+if [[ ${#FAILED_URLS[@]} -gt 0 ]]; then
+  echo -e "${RED}  PLAYLISTS QUE NÃO PUDERAM SER BAIXADAS:${RESET}"
+  for i in "${!FAILED_URLS[@]}"; do
+    echo -e "    ${RED}• ${FAILED_ARTISTS[$i]} - ${FAILED_ALBUMS[$i]}${RESET}"
+    echo -e "      ${DIM}URL:${RESET} ${FAILED_URLS[$i]}"
+    echo -e "      ${RED}Motivo:${RESET} ${FAILED_REASONS[$i]}"
   done
-  echo "  Log completo salvo em: $LOG_FILE"
   echo ""
 fi
 
-# ---- Docker ----
-if command -v docker >/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^swingmusic$'; then
-  echo "  Reiniciando container swingmusic..."
-  docker restart swingmusic
-  echo "  Container reiniciado"
-else
-  echo "  Container swingmusic nao encontrado. Reinicie manualmente se necessario:"
-  echo "    docker compose restart"
-fi
-
+separador
+echo -e "${GREEN}${BOLD}   ✨ PROCESSO CONCLUÍDO COM SUCESSO! APROVEITE SEU SWINGMUSIC! 🎶${RESET}"
+separador
 echo ""
-echo "  Pronto!"
